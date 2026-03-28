@@ -1,8 +1,11 @@
+using Cinemachine;
 using System.Collections;
 using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
 using UnityEngine.SceneManagement;
+using UnityEngine.UI;
+
 
 
 public class GameDirector : MonoBehaviour
@@ -18,10 +21,18 @@ public class GameDirector : MonoBehaviour
     public int limitePersianas = 5;
     public bool juegoTerminado = false;
 
-    [Header("Efecto de Muerte (Sin Animación)")]
+    [Header("Referencias Cinemachine")]
+    public CinemachineBrain brain;
+    public GameObject objetoJugador;
+
+    [Header("Efecto de Muerte")]
     public AudioSource audioSource;
     public AudioClip sonidoGolpe;
-    public float velocidadCaida = 0.5f;
+    public Image imagenNegra;
+
+    [Tooltip("Tiempo en segundos que dura la caída")]
+    [Range(1.0f, 10.0f)]
+    public float duracionCaida = 3f;
 
     void Update()
     {
@@ -29,7 +40,6 @@ public class GameDirector : MonoBehaviour
 
         tiempoTranscurrido += Time.deltaTime;
         int nuevaHora = 12 + Mathf.FloorToInt(tiempoTranscurrido / 60f);
-
         if (nuevaHora > 12) { horaActual = nuevaHora - 12; }
         else { horaActual = 12; }
 
@@ -42,65 +52,67 @@ public class GameDirector : MonoBehaviour
             WinGame();
         }
 
-        // Si llegamos al límite, iniciamos la secuencia de caída
         if (activePersianas >= limitePersianas)
         {
+            juegoTerminado = true;
             StartCoroutine(SecuenciaMuerteCaida());
         }
     }
 
-    // --- EL TRUCO DE LA CAÍDA ---
     IEnumerator SecuenciaMuerteCaida()
     {
-        juegoTerminado = true;
+        if (brain != null) brain.enabled = false;
+        if (objetoJugador != null) objetoJugador.SetActive(false);
 
-        // 1. Buscamos la cámara principal
-        Transform camara = Camera.main.transform;
-        Vector3 posInicial = camara.localPosition;
-        Quaternion rotInicial = camara.localRotation;
+        Transform camaraTransform = Camera.main.transform;
+        camaraTransform.SetParent(null);
 
-        // 2. Definimos el suelo y la rotación de lado (80 grados)
-        Vector3 posSuelo = new Vector3(posInicial.x, 0.2f, posInicial.z);
-        Quaternion rotLado = Quaternion.Euler(posInicial.x, posInicial.y, 80f);
+        Vector3 posInicial = camaraTransform.position;
+        Quaternion rotInicial = camaraTransform.rotation;
 
-        // 3. Sonido de impacto
+        Vector3 posSuelo = new Vector3(posInicial.x, 0.3f, posInicial.z);
+        Quaternion rotLado = rotInicial * Quaternion.Euler(0, 0, 80f);
+
         if (audioSource != null && sonidoGolpe != null)
         {
             audioSource.PlayOneShot(sonidoGolpe);
         }
 
-        // 4. Movemos la cámara físicamente por código
         float tiempo = 0;
-        while (tiempo < velocidadCaida)
+        while (tiempo < duracionCaida)
         {
             tiempo += Time.deltaTime;
-            float progreso = tiempo / velocidadCaida;
+            float t = tiempo / duracionCaida;
+            float suavizado = t * t * (3f - 2f * t);
 
-            camara.localPosition = Vector3.Lerp(posInicial, posSuelo, progreso);
-            camara.localRotation = Quaternion.Lerp(rotInicial, rotLado, progreso);
+            camaraTransform.position = Vector3.Lerp(posInicial, posSuelo, suavizado);
+            camaraTransform.rotation = Quaternion.Lerp(rotInicial, rotLado, suavizado);
+
+            if (imagenNegra != null)
+            {
+                Color c = imagenNegra.color;
+                c.a = Mathf.Lerp(0, 1, suavizado);
+                imagenNegra.color = c;
+            }
+
             yield return null;
         }
 
-        // 5. Esperamos un segundo en el suelo y cargamos la escena de perder
-        yield return new WaitForSeconds(1.5f);
+        yield return new WaitForSeconds(2.0f);
+
         SceneManager.LoadScene("LoseScene");
     }
 
-    void CheckEnemiesByHour()
+    void CheckEnemiesByHour() 
     {
-        // Aquí programaremos las Cadenas a la 1 AM después
-    }
 
+    }
     public void WinGame()
     {
-        juegoTerminado = true;
-        SceneManager.LoadScene("WinScene");
+        juegoTerminado = true; SceneManager.LoadScene("WinScene");
     }
-
     public void GameOver(string razon)
-    {
-        // Esta función la dejamos por si otros enemigos te matan de golpe
-        juegoTerminado = true;
-        SceneManager.LoadScene("LoseScene");
+    { 
+        juegoTerminado = true; SceneManager.LoadScene("LoseScene");
     }
 }

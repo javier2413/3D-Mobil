@@ -2,92 +2,162 @@ using Cinemachine;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.SceneManagement;
+using UnityEngine.UI;
+
 
 public class EnemigoSonoro : MonoBehaviour
 {
     [Header("Configuración de Muerte")]
-    public float tiempoMaximo = 5.0f;
-    private float contador = 0f;
+    public float tiempoMaximoAtaque = 5.0f;
+    private float contadorAtaque = 0f;
     private bool jugadorEnRango = false;
+    private bool estaMuriendo = false;
 
-    [Header("Referencias")]
-    private AudioSource fuenteAudio;
+    [Header("Referencias UI Muerte")]
+    [Tooltip("Arrastra aquí el objeto de la Jerarquía que tiene la Image negra")]
+    public GameObject objetoPantallaNegra;
+    public float duracionFundidoNegro = 2.5f;
+
+    [Header("Sonidos de Muerte")]
+    public AudioSource audioSourceJugador;
+    public AudioClip sonidoGritosAhorcado;
+    public AudioClip sonidoCadenasApretando;
+
+    [Header("Referencias Enemigo")]
+    private AudioSource fuenteAudioCadenas;
     private SphereCollider colliderRango;
     private Transform transformJugador;
     private CinemachineImpulseSource fuenteImpulso;
+    private GameDirector director;
 
     [Header("Configuración del Temblor")]
-    [Tooltip("Intensidad base del temblor")]
     public float fuerzaImpulsoBase = 0.5f;
+    public float intervaloTemblor = 0.1f;
+    private float timerTemblor = 0f;
 
     void Start()
     {
-        // Obtener componentes del mismo objeto
-        fuenteAudio = GetComponent<AudioSource>();
+        fuenteAudioCadenas = GetComponent<AudioSource>();
         colliderRango = GetComponent<SphereCollider>();
         fuenteImpulso = GetComponent<CinemachineImpulseSource>();
 
-        // Buscar al jugador
         GameObject jugadorGO = GameObject.FindGameObjectWithTag("Player");
         if (jugadorGO != null) transformJugador = jugadorGO.transform;
 
-        // Verificaciones de seguridad
-        if (fuenteAudio == null) Debug.LogError("¡Falta AudioSource en " + gameObject.name + "!");
-        if (colliderRango == null) Debug.LogError("¡Falta SphereCollider en " + gameObject.name + "!");
-        if (fuenteImpulso == null) Debug.LogError("¡Falta CinemachineImpulseSource en " + gameObject.name + "!");
+        director = FindObjectOfType<GameDirector>();
+
+        if (objetoPantallaNegra == null)
+        {
+            objetoPantallaNegra = GameObject.FindWithTag("Muerte");
+        }
     }
 
     void Update()
     {
+        if (estaMuriendo || (director != null && director.juegoTerminado)) return;
+
         if (jugadorEnRango && transformJugador != null)
         {
-            contador += Time.deltaTime;
+            contadorAtaque += Time.deltaTime;
 
-            // 1. Lógica del Sonido (Pitch sube con el tiempo)
-            if (fuenteAudio != null)
+            if (fuenteAudioCadenas != null)
             {
-                fuenteAudio.pitch = 1f + (contador / tiempoMaximo);
+                fuenteAudioCadenas.pitch = 1f + (contadorAtaque / tiempoMaximoAtaque);
             }
 
-            // 2. Lógica del Temblor (Se ejecuta cada frame mientras esté en rango)
-            GenerarTemblorProporcional();
-
-            // 3. Lógica de Muerte
-            if (contador >= tiempoMaximo)
+            timerTemblor += Time.deltaTime;
+            if (timerTemblor >= intervaloTemblor)
             {
-                MatarJugador();
+                GenerarTemblorProporcional();
+                timerTemblor = 0f;
+            }
+
+            if (contadorAtaque >= tiempoMaximoAtaque)
+            {
+                estaMuriendo = true;
+                StartCoroutine(SecuenciaMuerteAhorcamiento());
             }
         }
     }
 
     void GenerarTemblorProporcional()
     {
-        if (fuenteImpulso == null) return;
+        if (fuenteImpulso == null || estaMuriendo) return;
 
-        // Calculamos distancia para que vibre más fuerte mientras más cerca estés
         float distancia = Vector3.Distance(transform.position, transformJugador.position);
         float radio = colliderRango.radius;
-
-        // 0 en el borde, 1 justo encima del enemigo
         float intensidad = 1f - Mathf.Clamp01(distancia / radio);
+        float factorMuerte = contadorAtaque / tiempoMaximoAtaque;
 
-        // Disparamos el impulso de Cinemachine
-        // El vector determina la dirección aleatoria del 'sacudidón'
-        Vector3 direccionAleatoria = Random.insideUnitSphere * intensidad * fuerzaImpulsoBase;
+        Vector3 direccionAleatoria = Random.insideUnitSphere * intensidad * fuerzaImpulsoBase * factorMuerte;
         fuenteImpulso.GenerateImpulse(direccionAleatoria);
+    }
+
+    IEnumerator SecuenciaMuerteAhorcamiento()
+    {
+        if (director != null) director.juegoTerminado = true;
+
+        // Intentar detener el movimiento del jugador
+        if (transformJugador != null)
+        {
+            var controller = transformJugador.GetComponent<CharacterController>();
+            if (controller != null) controller.enabled = false;
+        }
+
+        // Desactivar el Brain de Cinemachine para congelar la cámara
+        CinemachineBrain brain = Camera.main.GetComponent<CinemachineBrain>();
+        if (brain != null) brain.enabled = false;
+
+        // Iniciar sonidos de muerte
+        if (audioSourceJugador != null)
+        {
+            if (fuenteAudioCadenas != null) fuenteAudioCadenas.Stop();
+            if (sonidoCadenasApretando != null) audioSourceJugador.PlayOneShot(sonidoCadenasApretando);
+            yield return new WaitForSeconds(0.5f);
+            if (sonidoGritosAhorcado != null) audioSourceJugador.PlayOneShot(sonidoGritosAhorcado);
+        }
+
+        // Fundido a negro (Asfixia)
+        float tiempoFundido = 0;
+        Color colorMuerte = Color.black;
+        colorMuerte.a = 0;
+
+        // Obtenemos el componente Image del GameObject que arrastraste
+        Image imgComp = null;
+        if (objetoPantallaNegra != null) imgComp = objetoPantallaNegra.GetComponent<Image>();
+
+        while (tiempoFundido < duracionFundidoNegro)
+        {
+            tiempoFundido += Time.deltaTime;
+            float t = tiempoFundido / duracionFundidoNegro;
+
+            if (imgComp != null)
+            {
+                colorMuerte.a = Mathf.Lerp(0, 1, t);
+                imgComp.color = colorMuerte;
+            }
+            yield return null;
+        }
+
+        // Espera final para que se escuchen los últimos sonidos en la oscuridad
+        yield return new WaitForSeconds(3.0f);
+        SceneManager.LoadScene("LoseScene");
     }
 
     private void OnTriggerEnter(Collider other)
     {
+        if (estaMuriendo) return;
         if (other.CompareTag("Player"))
         {
             jugadorEnRango = true;
-            if (fuenteAudio != null && !fuenteAudio.isPlaying) fuenteAudio.Play();
+            if (fuenteAudioCadenas != null && !fuenteAudioCadenas.isPlaying) fuenteAudioCadenas.Play();
         }
     }
 
     private void OnTriggerExit(Collider other)
     {
+        if (estaMuriendo) return;
         if (other.CompareTag("Player"))
         {
             ResetearEstado();
@@ -97,17 +167,7 @@ public class EnemigoSonoro : MonoBehaviour
     void ResetearEstado()
     {
         jugadorEnRango = false;
-        contador = 0f;
-        if (fuenteAudio != null)
-        {
-            fuenteAudio.pitch = 1f;
-            // Opcional: fuenteAudio.Stop(); si quieres que el sonido pare al salir
-        }
-    }
-
-    void MatarJugador()
-    {
-        Debug.Log("GAME OVER: El enemigo sonoro te eliminó");
-        // Aquí puedes poner: SceneManager.LoadScene("NombreDeTuEscenaGameOver");
+        contadorAtaque = 0f;
+        if (fuenteAudioCadenas != null) fuenteAudioCadenas.pitch = 1f;
     }
 }
