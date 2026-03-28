@@ -20,8 +20,11 @@ namespace StarterAssets
 		public bool cursorLocked = true;
 		public bool cursorInputForLook = true;
 
+		public bool flashlight;
+        public bool tablet;
+
 #if ENABLE_INPUT_SYSTEM
-		public void OnMove(InputValue value)
+        public void OnMove(InputValue value)
 		{
 			MoveInput(value.Get<Vector2>());
 		}
@@ -75,6 +78,16 @@ namespace StarterAssets
 		{
 			Cursor.lockState = newState ? CursorLockMode.Locked : CursorLockMode.None;
 		}
-	}
+
+        public void FlashlightInput(bool newFlashlightState)
+        {
+            flashlight = newFlashlightState;
+        }
+
+        public void TabletInput(bool newTabletState)
+        {
+            tablet = newTabletState;
+        }
+    }
 	
 }

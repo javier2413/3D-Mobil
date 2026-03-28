@@ -4,7 +4,13 @@
 EditorBuildSettings:
   m_ObjectHideFlags: 0
   serializedVersion: 2
-  m_Scenes: []
+  m_Scenes:
+  - enabled: 1
+    path: Assets/Escenas/LoseScene.unity
+    guid: adb1c7d1705d19242b692c2aec6c67f0
+  - enabled: 1
+    path: Assets/Escenas/WinScene.unity
+    guid: b96d44f716124504eb7bb728ba479a13
   m_configObjects:
     com.unity.adaptiveperformance.simulator.provider_settings: {fileID: 11400000,
       guid: fa5d90a93a2231e428e1b62b8d8aec1d, type: 2}
