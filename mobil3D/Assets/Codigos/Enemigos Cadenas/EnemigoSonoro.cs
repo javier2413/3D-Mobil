@@ -8,6 +8,15 @@ using UnityEngine.UI;
 
 public class EnemigoSonoro : MonoBehaviour
 {
+    [Header("Configuración de Acecho")]
+    public float radioAparicion = 15f;
+    public float tiempoVisible = 20f; 
+    public float esperaMinima = 5f;  
+    public float esperaMaxima = 10f; 
+
+    private float timerAcecho = 0f;
+    private bool estaEsperando = false;
+
     [Header("Configuración de Muerte")]
     public float tiempoMaximoAtaque = 5.0f;
     private float contadorAtaque = 0f;
@@ -15,18 +24,16 @@ public class EnemigoSonoro : MonoBehaviour
     private bool estaMuriendo = false;
 
     [Header("Referencias UI Muerte")]
-    [Tooltip("Arrastra aquí el objeto de la Jerarquía que tiene la Image negra")]
     public GameObject objetoPantallaNegra;
     public float duracionFundidoNegro = 2.5f;
 
-    [Header("Sonidos de Muerte")]
+    [Header("Sonidos")]
+    public AudioSource fuenteAudioCadenas;
     public AudioSource audioSourceJugador;
     public AudioClip sonidoGritosAhorcado;
     public AudioClip sonidoCadenasApretando;
 
-    [Header("Referencias Enemigo")]
-    private AudioSource fuenteAudioCadenas;
-    private SphereCollider colliderRango;
+    [Header("Referencias Generales")]
     private Transform transformJugador;
     private CinemachineImpulseSource fuenteImpulso;
     private GameDirector director;
@@ -36,138 +43,169 @@ public class EnemigoSonoro : MonoBehaviour
     public float intervaloTemblor = 0.1f;
     private float timerTemblor = 0f;
 
+    private void OnEnable()
+    {
+        if (fuenteAudioCadenas != null)
+        {
+            fuenteAudioCadenas.pitch = 1f;
+        }
+
+        StartCoroutine(CicloDeAparicion());
+    }
+
     void Start()
     {
-        fuenteAudioCadenas = GetComponent<AudioSource>();
-        colliderRango = GetComponent<SphereCollider>();
         fuenteImpulso = GetComponent<CinemachineImpulseSource>();
+        director = FindObjectOfType<GameDirector>();
+        if (fuenteAudioCadenas == null) fuenteAudioCadenas = GetComponent<AudioSource>();
 
         GameObject jugadorGO = GameObject.FindGameObjectWithTag("Player");
         if (jugadorGO != null) transformJugador = jugadorGO.transform;
 
-        director = FindObjectOfType<GameDirector>();
-
-        if (objetoPantallaNegra == null)
-        {
-            objetoPantallaNegra = GameObject.FindWithTag("Muerte");
-        }
+        if (objetoPantallaNegra == null) objetoPantallaNegra = GameObject.FindWithTag("Muerte");
     }
 
     void Update()
     {
-        if (estaMuriendo || (director != null && director.juegoTerminado)) return;
+        if (estaMuriendo || estaEsperando || (director != null && director.juegoTerminado)) return;
 
-        if (jugadorEnRango && transformJugador != null)
+        if (jugadorEnRango)
         {
-            contadorAtaque += Time.deltaTime;
+            ActualizarAtaque();
+        }
+        else
+        {
+            if (fuenteAudioCadenas != null) fuenteAudioCadenas.pitch = 1f;
+            contadorAtaque = 0f;
+        }
+    }
 
-            if (fuenteAudioCadenas != null)
-            {
-                fuenteAudioCadenas.pitch = 1f + (contadorAtaque / tiempoMaximoAtaque);
-            }
+    IEnumerator CicloDeAparicion()
+    {
+        while (!estaMuriendo)
+        {
+            estaEsperando = true;
+            if (fuenteAudioCadenas != null) fuenteAudioCadenas.Stop();
 
-            timerTemblor += Time.deltaTime;
-            if (timerTemblor >= intervaloTemblor)
-            {
-                GenerarTemblorProporcional();
-                timerTemblor = 0f;
-            }
+            transform.position = new Vector3(0, -100, 0);
 
-            if (contadorAtaque >= tiempoMaximoAtaque)
-            {
-                estaMuriendo = true;
-                StartCoroutine(SecuenciaMuerteAhorcamiento());
-            }
+            float tiempoEspera = Random.Range(esperaMinima, esperaMaxima);
+            yield return new WaitForSeconds(tiempoEspera);
+
+            TeletransportarEnemigo();
+            estaEsperando = false;
+            if (fuenteAudioCadenas != null) fuenteAudioCadenas.Play();
+
+            yield return new WaitForSeconds(tiempoVisible);
+        }
+    }
+
+    public void TeletransportarEnemigo()
+    {
+        if (transformJugador == null) return;
+
+        Vector2 puntoAleatorio = Random.insideUnitCircle.normalized * radioAparicion;
+        Vector3 nuevaPos = new Vector3(transformJugador.position.x + puntoAleatorio.x, transformJugador.position.y, transformJugador.position.z + puntoAleatorio.y);
+
+        transform.position = nuevaPos;
+        Debug.Log("Las cadenas han reaparecido en una nueva posición.");
+    }
+
+    void ActualizarAtaque()
+    {
+        contadorAtaque += Time.deltaTime;
+        if (fuenteAudioCadenas != null)
+            fuenteAudioCadenas.pitch = 1f + (contadorAtaque / tiempoMaximoAtaque);
+
+        timerTemblor += Time.deltaTime;
+        if (timerTemblor >= intervaloTemblor)
+        {
+            GenerarTemblorProporcional();
+            timerTemblor = 0f;
+        }
+
+        if (contadorAtaque >= tiempoMaximoAtaque)
+        {
+            estaMuriendo = true;
+            StopAllCoroutines();
+            StartCoroutine(SecuenciaMuerteAhorcamiento());
         }
     }
 
     void GenerarTemblorProporcional()
     {
-        if (fuenteImpulso == null || estaMuriendo) return;
-
-        float distancia = Vector3.Distance(transform.position, transformJugador.position);
-        float radio = colliderRango.radius;
-        float intensidad = 1f - Mathf.Clamp01(distancia / radio);
+        if (fuenteImpulso == null || transformJugador == null) return;
         float factorMuerte = contadorAtaque / tiempoMaximoAtaque;
-
-        Vector3 direccionAleatoria = Random.insideUnitSphere * intensidad * fuerzaImpulsoBase * factorMuerte;
-        fuenteImpulso.GenerateImpulse(direccionAleatoria);
+        Vector3 direccion = Random.insideUnitSphere * fuerzaImpulsoBase * factorMuerte;
+        fuenteImpulso.GenerateImpulse(direccion);
     }
 
     IEnumerator SecuenciaMuerteAhorcamiento()
     {
         if (director != null) director.juegoTerminado = true;
 
-        // Intentar detener el movimiento del jugador
-        if (transformJugador != null)
-        {
-            var controller = transformJugador.GetComponent<CharacterController>();
-            if (controller != null) controller.enabled = false;
-        }
+        if (transformJugador.GetComponent<CharacterController>())
+            transformJugador.GetComponent<CharacterController>().enabled = false;
 
-        // Desactivar el Brain de Cinemachine para congelar la cámara
         CinemachineBrain brain = Camera.main.GetComponent<CinemachineBrain>();
         if (brain != null) brain.enabled = false;
 
-        // Iniciar sonidos de muerte
+        Transform camaraTransform = Camera.main.transform;
+        Vector3 posInicial = camaraTransform.position;
+        Quaternion rotInicial = camaraTransform.rotation;
+
+        Vector3 posLevantado = posInicial + Vector3.up * 1.5f;
+        Vector3 posSuelo = new Vector3(posInicial.x, 0.3f, posInicial.z);
+        Quaternion rotLado = rotInicial * Quaternion.Euler(0, 0, 70f);
+
         if (audioSourceJugador != null)
         {
             if (fuenteAudioCadenas != null) fuenteAudioCadenas.Stop();
-            if (sonidoCadenasApretando != null) audioSourceJugador.PlayOneShot(sonidoCadenasApretando);
-            yield return new WaitForSeconds(0.5f);
-            if (sonidoGritosAhorcado != null) audioSourceJugador.PlayOneShot(sonidoGritosAhorcado);
+            audioSourceJugador.PlayOneShot(sonidoCadenasApretando);
         }
 
-        // Fundido a negro (Asfixia)
-        float tiempoFundido = 0;
-        Color colorMuerte = Color.black;
-        colorMuerte.a = 0;
+        float tiempo = 0;
+        float duracionLevantar = 2.0f;
+        Image img = objetoPantallaNegra != null ? objetoPantallaNegra.GetComponent<Image>() : null;
 
-        // Obtenemos el componente Image del GameObject que arrastraste
-        Image imgComp = null;
-        if (objetoPantallaNegra != null) imgComp = objetoPantallaNegra.GetComponent<Image>();
-
-        while (tiempoFundido < duracionFundidoNegro)
+        while (tiempo < duracionLevantar)
         {
-            tiempoFundido += Time.deltaTime;
-            float t = tiempoFundido / duracionFundidoNegro;
+            tiempo += Time.deltaTime;
+            float t = tiempo / duracionLevantar;
+            float suavizado = t * t * (3f - 2f * t);
 
-            if (imgComp != null)
-            {
-                colorMuerte.a = Mathf.Lerp(0, 1, t);
-                imgComp.color = colorMuerte;
-            }
+            camaraTransform.position = Vector3.Lerp(posInicial, posLevantado, suavizado);
+
+            if (img != null) img.color = new Color(0, 0, 0, t * 0.8f);
+
             yield return null;
         }
 
-        // Espera final para que se escuchen los últimos sonidos en la oscuridad
-        yield return new WaitForSeconds(3.0f);
+      
+        if (audioSourceJugador != null) audioSourceJugador.PlayOneShot(sonidoGritosAhorcado);
+
+        tiempo = 0;
+        float duracionCaidaRapida = 0.5f;
+        Vector3 posAntesDeCaer = camaraTransform.position;
+
+        while (tiempo < duracionCaidaRapida)
+        {
+            tiempo += Time.deltaTime;
+            float t = tiempo / duracionCaidaRapida;
+
+           
+            camaraTransform.position = Vector3.Lerp(posAntesDeCaer, posSuelo, t * t);
+            camaraTransform.rotation = Quaternion.Lerp(rotInicial, rotLado, t);
+
+            if (img != null) img.color = new Color(0, 0, 0, 0.8f + (t * 0.2f));
+
+            yield return null;
+        }
+
+        yield return new WaitForSeconds(2.5f);
         SceneManager.LoadScene("LoseScene");
     }
 
-    private void OnTriggerEnter(Collider other)
-    {
-        if (estaMuriendo) return;
-        if (other.CompareTag("Player"))
-        {
-            jugadorEnRango = true;
-            if (fuenteAudioCadenas != null && !fuenteAudioCadenas.isPlaying) fuenteAudioCadenas.Play();
-        }
-    }
-
-    private void OnTriggerExit(Collider other)
-    {
-        if (estaMuriendo) return;
-        if (other.CompareTag("Player"))
-        {
-            ResetearEstado();
-        }
-    }
-
-    void ResetearEstado()
-    {
-        jugadorEnRango = false;
-        contadorAtaque = 0f;
-        if (fuenteAudioCadenas != null) fuenteAudioCadenas.pitch = 1f;
-    }
+    private void OnTriggerEnter(Collider other) { if (other.CompareTag("Player")) jugadorEnRango = true; }
+    private void OnTriggerExit(Collider other) { if (other.CompareTag("Player")) jugadorEnRango = false; }
 }

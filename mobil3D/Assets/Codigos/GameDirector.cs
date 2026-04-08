@@ -16,6 +16,13 @@ public class GameDirector : MonoBehaviour
     public int horaActual = 12;
     public TextMeshProUGUI textoReloj;
 
+    [Header("Enemigos por Hora")]
+    public GameObject enemigoCadenas;
+    private bool enemigoCadenasActivado = false;
+
+    private ControladorLuces sistemaLuces;
+    private bool sistemaLucesIniciado = false;
+
     [Header("Estado de la Partida")]
     public int activePersianas = 0;
     public int limitePersianas = 5;
@@ -34,12 +41,21 @@ public class GameDirector : MonoBehaviour
     [Range(1.0f, 10.0f)]
     public float duracionCaida = 3f;
 
+    void Start()
+    {
+        sistemaLuces = FindObjectOfType<ControladorLuces>();
+    }
+
     void Update()
     {
         if (juegoTerminado) return;
 
         tiempoTranscurrido += Time.deltaTime;
-        int nuevaHora = 12 + Mathf.FloorToInt(tiempoTranscurrido / 60f);
+
+      
+        float progresoHora = tiempoTranscurrido / (tiempoRealSegundos / 6f);
+        int nuevaHora = 12 + Mathf.FloorToInt(progresoHora);
+
         if (nuevaHora > 12) { horaActual = nuevaHora - 12; }
         else { horaActual = 12; }
 
@@ -47,72 +63,65 @@ public class GameDirector : MonoBehaviour
 
         CheckEnemiesByHour();
 
-        if (tiempoTranscurrido >= tiempoRealSegundos || horaActual == 6)
+        if (horaActual == 6)
         {
             WinGame();
         }
 
         if (activePersianas >= limitePersianas)
         {
-            juegoTerminado = true;
-            StartCoroutine(SecuenciaMuerteCaida());
+            GameOver("Persianas bloqueadas");
         }
     }
 
-    IEnumerator SecuenciaMuerteCaida()
+    void CheckEnemiesByHour()
     {
-        if (brain != null) brain.enabled = false;
-        if (objetoJugador != null) objetoJugador.SetActive(false);
-
-        Transform camaraTransform = Camera.main.transform;
-        camaraTransform.SetParent(null);
-
-        Vector3 posInicial = camaraTransform.position;
-        Quaternion rotInicial = camaraTransform.rotation;
-
-        Vector3 posSuelo = new Vector3(posInicial.x, 0.3f, posInicial.z);
-        Quaternion rotLado = rotInicial * Quaternion.Euler(0, 0, 80f);
-
-        if (audioSource != null && sonidoGolpe != null)
+        if (horaActual == 1 && !enemigoCadenasActivado)
         {
-            audioSource.PlayOneShot(sonidoGolpe);
-        }
-
-        float tiempo = 0;
-        while (tiempo < duracionCaida)
-        {
-            tiempo += Time.deltaTime;
-            float t = tiempo / duracionCaida;
-            float suavizado = t * t * (3f - 2f * t);
-
-            camaraTransform.position = Vector3.Lerp(posInicial, posSuelo, suavizado);
-            camaraTransform.rotation = Quaternion.Lerp(rotInicial, rotLado, suavizado);
-
-            if (imagenNegra != null)
+            if (enemigoCadenas != null)
             {
-                Color c = imagenNegra.color;
-                c.a = Mathf.Lerp(0, 1, suavizado);
-                imagenNegra.color = c;
-            }
+                enemigoCadenasActivado = true;
+                enemigoCadenas.SetActive(true);
 
-            yield return null;
+                EnemigoSonoro scriptEnemigo = enemigoCadenas.GetComponent<EnemigoSonoro>();
+                if (scriptEnemigo != null)
+                {
+                    scriptEnemigo.Invoke("TeletransportarEnemigo", 0.1f);
+                }
+                Debug.Log("SISTEMA: 1 AM - El enemigo de las cadenas acecha.");
+            }
         }
 
-        yield return new WaitForSeconds(2.0f);
-
-        SceneManager.LoadScene("LoseScene");
+      
+        if (horaActual == 3 && !sistemaLucesIniciado)
+        {
+            sistemaLucesIniciado = true;
+            Debug.Log("SISTEMA: 3 AM - El sistema eléctrico del mercado está fallando.");
+        }
     }
 
-    void CheckEnemiesByHour() 
-    {
 
-    }
     public void WinGame()
     {
-        juegoTerminado = true; SceneManager.LoadScene("WinScene");
+        if (juegoTerminado) return;
+        juegoTerminado = true;
+        SceneManager.LoadScene("WinScene");
     }
+
     public void GameOver(string razon)
-    { 
-        juegoTerminado = true; SceneManager.LoadScene("LoseScene");
+    {
+        if (juegoTerminado) return;
+        juegoTerminado = true;
+        StartCoroutine(SecuenciaMuerteCaida());
+    }
+
+   
+    IEnumerator SecuenciaMuerteCaida()
+    {
+       
+        if (brain != null) brain.enabled = false;
+      
+        yield return new WaitForSeconds(2.0f);
+        SceneManager.LoadScene("LoseScene");
     }
 }
