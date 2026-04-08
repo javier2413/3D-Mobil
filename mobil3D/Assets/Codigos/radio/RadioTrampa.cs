@@ -37,14 +37,12 @@ public class RadioTrampa : MonoBehaviour
     {
         if (director == null || director.juegoTerminado) return;
 
-        // 1. DISPARADOR INICIAL (A las 2 AM en punto)
         if (director.horaActual == 2 && !yaSeActivoHoy && !estaActiva)
         {
             yaSeActivoHoy = true;
             ActivarRadio();
         }
 
-        // 2. LOGICA DE REPETICIÓN (Si ya se activó y estamos esperando)
         if (esperandoParaRepetir && !estaActiva && director.horaActual < 3)
         {
             timerReactivacion += Time.deltaTime;
@@ -54,14 +52,12 @@ public class RadioTrampa : MonoBehaviour
             }
         }
 
-        // 3. CANCELACIÓN (Si dan las 3 AM, se acaba el evento de la radio)
         if (director.horaActual >= 3)
         {
             if (estaActiva || esperandoParaRepetir) ResetRadioTotal();
             return;
         }
 
-        // 4. LOGICA DE MUERTE
         if (estaActiva)
         {
             contadorMuerte += Time.deltaTime;
@@ -73,7 +69,6 @@ public class RadioTrampa : MonoBehaviour
                 estaActiva = false;
             }
 
-            // APAGAR CON CLICK
             if (Input.GetMouseButtonDown(0))
             {
                 float distancia = Vector3.Distance(transform.position, jugador.position);
